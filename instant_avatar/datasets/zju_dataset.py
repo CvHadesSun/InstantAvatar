@@ -7,73 +7,57 @@ import cv2
 import glob
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
-from instant_avatar.datasets.utils import make_rays
+
+from PIL import Image
+
+from torch.multiprocessing import Manager
+from instant_avatar.datasets.utils import (
+    combine_smpl_params,
+    get_view_data,
+    get_camera_params,
+    make_rays,
+)
 
 
-def load_smpl_param(path):
-    smpl_params = dict(np.load(str(path)))
-    if "thetas" in smpl_params:
-        smpl_params["body_pose"] = smpl_params["thetas"][..., 3:]
-        smpl_params["global_orient"] = smpl_params["thetas"][..., :3]
-    return {
-        "betas": smpl_params["betas"].astype(np.float32).reshape(1, 10),
-        "body_pose": smpl_params["body_pose"].astype(np.float32),
-        "global_orient": smpl_params["global_orient"].astype(np.float32),
-        "transl": smpl_params["transl"].astype(np.float32),
-    }
-
-
-class PeopleSnapshotDataset(torch.utils.data.Dataset):
+class ZJUDataset(torch.utils.data.Dataset):
     def __init__(self, root, subject, split, opt):
-        camera = np.load(str(root / "cameras.npz"))
-        K = camera["intrinsic"]
-        c2w = np.linalg.inv(camera["extrinsic"])
-        height = camera["height"]
-        width = camera["width"]
-
-        self.downscale = opt.downscale
-        if self.downscale > 1:
-            height = int(height / self.downscale)
-            width = int(width / self.downscale)
-            K[:2] /= self.downscale
-
-        self.rays_o, self.rays_d = make_rays(K, c2w, height, width)
-
+        self.cams = get_camera_params(root, opt.view_id, opt.downscale, processed=False)
+        self.processed_raw = opt.processed
         # prepare image and mask
+
         start = opt.start
         end = opt.end + 1
         skip = opt.get("skip", 1)
-        self.img_lists = sorted(glob.glob(f"{root}/raw_images/*.png"))[start:end:skip]
-        self.msk_lists = sorted(glob.glob(f"{root}/raw_masks/*.npy"))[start:end:skip]
 
-        refine = opt.get("refine", False)
-        if refine:  # fix model and optimize SMPL
-            cached_path = root / "poses/anim_nerf_test.npz"
-        else:
-            if os.path.exists(root / f"poses/anim_nerf_{split}.npz"):
-                cached_path = root / f"poses/anim_nerf_{split}.npz"
-            elif os.path.exists(root / f"poses/{split}.npz"):
-                cached_path = root / f"poses/{split}.npz"
-            else:
-                cached_path = None
+        self.img_lists = []
+        self.msk_lists = []
 
-        if cached_path and os.path.exists(cached_path):
-            print(f"[{split}] Loading from", cached_path)
-            self.smpl_params = load_smpl_param(cached_path)
-        else:
-            print(f"[{split}] No optimized smpl found.")
-            self.smpl_params = load_smpl_param(root / "poses.npz")
-            for k, v in self.smpl_params.items():
-                if k != "betas":
-                    self.smpl_params[k] = v[start:end:skip]
+        smpl_params_lists = []
+
+        self.view_lists = []
+
+        for vid in opt.view_id:
+            _img_list, _msk_list, smpl_param, view_list = get_view_data(
+                root, vid, start, end, skip
+            )
+            self.img_lists.extend(_img_list)
+            self.msk_lists.extend(_msk_list)
+            self.view_lists.extend(view_list)
+            smpl_params_lists.append(smpl_param)
+
+        self.smpl_params = combine_smpl_params(smpl_params_lists)
 
         self.split = split
         self.downscale = opt.downscale
         self.near = opt.get("near", None)
         self.far = opt.get("far", None)
-        self.image_shape = (height, width)
+
         if split == "train":
             self.sampler = hydra.utils.instantiate(opt.sampler)
+
+        self.cam_extent = 3.0
+
+        self.cache_dict = Manager().dict()
 
     def get_SMPL_params(self):
         return {k: torch.from_numpy(v.copy()) for k, v in self.smpl_params.items()}
@@ -82,8 +66,27 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
         return len(self.img_lists)
 
     def __getitem__(self, idx):
+        if idx in self.cache_dict:
+            return self.cache_dict[idx]
+        else:
+            sample = self.get_data(idx)
+            self.cache_dict[idx] = sample
+            return sample
+
+    def get_data(self, idx):
+        self.image_shape = (cam["height"], cam["width"])
+
+        cam_id = self.view_lists[idx]
+        cam = self.cams[cam_id]
+
+        K = cam["K"]
+
         img = cv2.imread(self.img_lists[idx])
-        msk = np.load(self.msk_lists[idx])
+        # msk = np.load(self.msk_lists[idx])
+        msk = cv2.imread(self.msk_lists[idx], -1) / 255.0
+        # img = cv2.undistort(img, ori_K, D)
+        # msk = cv2.undistort(msk, ori_K, D)
+
         if self.downscale > 1:
             img = cv2.resize(
                 img, dsize=None, fx=1 / self.downscale, fy=1 / self.downscale
@@ -94,7 +97,10 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
 
         img = (img[..., :3] / 255).astype(np.float32)
         msk = msk.astype(np.float32)
+        # msk = np.ones_like(msk)
         # apply mask
+        if len(msk.shape) > 2:
+            msk = msk[:, :, 0]
         if self.split == "train":
             bg_color = np.random.rand(*img.shape).astype(np.float32)
             img = img * msk[..., None] + (1 - msk[..., None]) * bg_color
@@ -102,9 +108,11 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             bg_color = np.ones_like(img).astype(np.float32)
             img = img * msk[..., None] + (1 - msk[..., None])
 
+        rays_o_, rays_d_ = make_rays(K, cam["c2w"], cam["height"], cam["width"])
+
         if self.split == "train":
             (msk, img, rays_o, rays_d, bg_color) = self.sampler.sample(
-                msk, img, self.rays_o, self.rays_d, bg_color
+                msk, img, rays_o_, rays_d_, bg_color
             )
         else:
             rays_o = self.rays_o.reshape(-1, 3)
@@ -127,6 +135,7 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             "bg_color": bg_color,
             "idx": idx,
         }
+
         if self.near is not None and self.far is not None:
             datum["near"] = np.ones_like(rays_d[..., 0]) * self.near
             datum["far"] = np.ones_like(rays_d[..., 0]) * self.far
@@ -136,18 +145,17 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             dist = np.sqrt(np.square(self.smpl_params["transl"][idx]).sum(-1))
             datum["near"] = np.ones_like(rays_d[..., 0]) * (dist - 1)
             datum["far"] = np.ones_like(rays_d[..., 0]) * (dist + 1)
+
         return datum
 
 
-class PeopleSnapshotDataModule(pl.LightningDataModule):
+class ZJUDataModule(pl.LightningDataModule):
     def __init__(self, opt, **kwargs):
         super().__init__()
 
         data_dir = Path(hydra.utils.to_absolute_path(opt.dataroot))
         for split in ("train", "val", "test"):
-            dataset = PeopleSnapshotDataset(
-                data_dir, opt.subject, split, opt.get(split)
-            )
+            dataset = ZJUDataset(data_dir, opt.subject, split, opt.get(split))
             setattr(self, f"{split}set", dataset)
         self.opt = opt
 

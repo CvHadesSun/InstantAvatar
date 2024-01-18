@@ -1,0 +1,44 @@
+_target_: instant_avatar.datasets.gaussian_zju.GaussianDataModule
+name: zju 
+subject: animation
+gender: neutral 
+opt:
+  dataroot: /data5/zhiyh/tmp/nvr_zju/my_393
+  subject: ${dataset.subject}
+  dmtet_geo_path: ./data/SMPLX/tets/smpl_tets.obj
+  train:
+    view_id: [4]
+    num_workers: 8
+    batch_size: 1
+    start: 0
+    end: 500 
+    skip: 5
+    downscale: 2
+    sampler: ${sampler}
+    fitting: ${model.opt.optimize_SMPL.enable}
+    refine: ${model.opt.optimize_SMPL.is_refine}
+    white_background: False 
+    random_init: True
+    processed: True
+  val:
+    view_id: [4]
+    num_workers: 4
+    batch_size: 1
+    start: 451 
+    end: 461 
+    skip: 4 
+    downscale: 2
+    white_background: false
+    random_init: True
+    processed: True
+  test:
+    view_id: [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+    num_workers: 4
+    batch_size: 1
+    start: 0
+    end: 510
+    skip: 30 
+    downscale: 2 
+    white_background: false
+    random_init: True
+    processed: True

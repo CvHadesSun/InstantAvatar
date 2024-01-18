@@ -10,15 +10,23 @@ from torch.cuda.amp import custom_fwd
 from torchmetrics import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
+from instant_avatar.metric.image_utils import psnr
+from instant_avatar.metric.lpipsPyTorch import lpips
+from instant_avatar.metric.loss_utils import ssim
+
 
 class Evaluator(nn.Module):
     """adapted from https://github.com/JanaldoChen/Anim-NeRF/blob/main/models/evaluator.py"""
 
     def __init__(self):
         super().__init__()
-        self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="alex")
-        self.psnr = PeakSignalNoiseRatio(data_range=1)
-        self.ssim = StructuralSimilarityIndexMeasure(data_range=1)
+        # self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="alex")
+        # self.psnr = PeakSignalNoiseRatio(data_range=1)
+        # self.ssim = StructuralSimilarityIndexMeasure(data_range=1)
+
+        self.lpips = lpips
+        self.psnr = psnr
+        self.ssim = ssim
 
     # custom_fwd: turn off mixed precision to avoid numerical instability during evaluation
     @custom_fwd(cast_inputs=torch.float32)

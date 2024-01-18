@@ -1,0 +1,44 @@
+_target_: instant_avatar.datasets.gaussian_monocap.GaussianDataModule
+name: monocap 
+subject: animation
+gender: neutral 
+opt:
+  dataroot: /data2/zhiyh/MonoCap_processed/marc_images35000_36200
+  subject: ${dataset.subject}
+  dmtet_geo_path: ./data/SMPLX/tets/smpl_tets.obj
+  train:
+    view_id: [0]
+    num_workers: 8
+    batch_size: 1
+    start: 0
+    end: 500
+    skip: 5
+    downscale: 2
+    sampler: ${sampler}
+    fitting: ${model.opt.optimize_SMPL.enable}
+    refine: ${model.opt.optimize_SMPL.is_refine}
+    white_background: False 
+    random_init: True
+    processed: True
+  val:
+    view_id: [4]
+    num_workers: 4
+    batch_size: 1
+    start: 451 
+    end: 461 
+    skip: 4 
+    downscale: 2
+    white_background: false
+    random_init: True
+    processed: True
+  test:
+    view_id: [1,2,3,4,5,6,7,8,9,10]
+    num_workers: 4
+    batch_size: 1
+    start: 0 
+    end: 510 
+    skip: 30
+    downscale: 2
+    white_background: false
+    random_init: True
+    processed: True

@@ -1,0 +1,37 @@
+_target_: instant_avatar.datasets.gaussian_dataset.GaussianDataModule
+name: zju 
+subject: animation
+gender: neutral 
+opt:
+  dataroot: /remote-home/dataset/zju/315
+  subject: ${dataset.subject}
+  train:
+    num_workers: 8
+    batch_size: 1
+    start: 0
+    end: 450 
+    skip: 4 
+    downscale: 1
+    sampler: ${sampler}
+    fitting: ${model.opt.optimize_SMPL.enable}
+    refine: ${model.opt.optimize_SMPL.is_refine}
+    white_background: false
+    random_init: True
+  val:
+    num_workers: 4
+    batch_size: 1
+    start: 451 
+    end: 461 
+    skip: 4 
+    downscale: 1
+    white_background: True
+    random_init: True
+  test:
+    num_workers: 4
+    batch_size: 1
+    start: 1 
+    end: 1 
+    skip: 1 
+    downscale: 1
+    white_background: True
+    random_init: True
