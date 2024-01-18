@@ -1,4 +1,4 @@
-_target_: instant_avatar.datasets.gaussian_zju.GaussianDataModule
+_target_: instant_avatar.datasets.zju_dataset.ZJUDataModule
 name: zju 
 subject: animation
 gender: neutral 

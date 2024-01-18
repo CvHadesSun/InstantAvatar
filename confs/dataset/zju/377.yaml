@@ -1,11 +1,10 @@
-_target_: instant_avatar.datasets.gaussian_zju.GaussianDataModule
+_target_: instant_avatar.datasets.zju_dataset.ZJUDataModule
 name: zju 
 subject: animation
 gender: neutral 
 opt:
   dataroot: /data5/zhiyh/tmp/nvr_zju/my_377
   subject: ${dataset.subject}
-  dmtet_geo_path: ./data/SMPLX/tets/smpl_tets.obj
   train:
     view_id: [4]
     num_workers: 8
