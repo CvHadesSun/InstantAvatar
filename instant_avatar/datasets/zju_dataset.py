@@ -74,7 +74,6 @@ class ZJUDataset(torch.utils.data.Dataset):
             return sample
 
     def get_data(self, idx):
-        self.image_shape = (cam["height"], cam["width"])
 
         cam_id = self.view_lists[idx]
         cam = self.cams[cam_id]
@@ -115,8 +114,8 @@ class ZJUDataset(torch.utils.data.Dataset):
                 msk, img, rays_o_, rays_d_, bg_color
             )
         else:
-            rays_o = self.rays_o.reshape(-1, 3)
-            rays_d = self.rays_d.reshape(-1, 3)
+            rays_o = rays_o_.reshape(-1, 3)
+            rays_d = rays_d_.reshape(-1, 3)
             img = img.reshape(-1, 3)
             msk = msk.reshape(-1)
 
@@ -133,6 +132,8 @@ class ZJUDataset(torch.utils.data.Dataset):
             # auxiliary
             "alpha": msk,
             "bg_color": bg_color,
+            "width": cam["width"],
+            "height": cam["height"],
             "idx": idx,
         }
 

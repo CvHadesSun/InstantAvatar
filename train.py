@@ -26,7 +26,7 @@ def main(opt):
 
     datamodule = hydra.utils.instantiate(opt.dataset, _recursive_=False)
     model = hydra.utils.instantiate(opt.model, datamodule=datamodule, _recursive_=False)
-    trainer = pl.Trainer(gpus=1,
+    trainer = pl.Trainer(#gpus=1,
                          accelerator="gpu",
                          callbacks=[checkpoint_callback, lr_monitor],
                          num_sanity_val_steps=0,  # disable sanity check

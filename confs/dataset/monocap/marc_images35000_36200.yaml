@@ -1,4 +1,4 @@
-_target_: instant_avatar.datasets.gaussian_monocap.GaussianDataModule
+_target_: instant_avatar.datasets.monocap_dataset.MonoCapDataModule
 name: monocap 
 subject: animation
 gender: neutral 

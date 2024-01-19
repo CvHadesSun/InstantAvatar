@@ -142,9 +142,9 @@ class DNeRFModel(pl.LightningModule):
 
         for k, v in losses.items():
             self.log(f"train/{k}", v)
-        if self.precision == 16:
-            self.log("precision/scale",
-                     self.trainer.precision_plugin.scaler.get_scale())
+        #if self.precision == 16:
+        #    self.log("precision/scale",
+        #             self.trainer.precision_plugin.scaler.get_scale())
 
         if self.automatic_optimization:
             return losses["loss"]
@@ -170,7 +170,8 @@ class DNeRFModel(pl.LightningModule):
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx, *args, **kwargs):
-        img_size = self.datamodule.valset.image_shape
+        #img_size = self.datamodule.valset.image_shape
+        img_size= (batch["height"][0],batch["width"][0])
         rgb, depth, alpha, counter = self.render_image_fast(batch, img_size)
 
         rgb_gt = batch["rgb"].reshape(-1, *img_size, 3)
@@ -224,7 +225,8 @@ class DNeRFModel(pl.LightningModule):
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, *args, **kwargs):
-        img_size = self.datamodule.testset.image_shape
+        #img_size = self.datamodule.testset.image_shape
+        img_size= (batch["height"][0],batch["width"][0])
         rgb, *_ = self.render_image_fast(batch, img_size)
         rgb_gt = batch["rgb"].reshape(-1, *img_size, 3)
         errmap = (rgb - rgb_gt).square().sum(-1).sqrt().cpu().numpy()[0] / np.sqrt(3)

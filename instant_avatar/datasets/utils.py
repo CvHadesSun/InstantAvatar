@@ -4,7 +4,6 @@ import numpy as np
 import json
 import glob
 import os
-from gaussian_splatting_module.utils.graphics_utils import focal2fov
 import copy
 
 
@@ -52,8 +51,8 @@ def load_annots(data_dir, view_id):
     cam_data["D"] = D
     cam_data["R"] = R
     cam_data["T"] = T
-    cam_data["width"] = 1024
-    cam_data["height"] = 1024
+    cam_data["width"] = 1285 #1024
+    cam_data["height"] = 940 #1024
 
     return cam_data
 
@@ -125,6 +124,7 @@ def load_smpl_param(param_path, fids, json_flag=True):
         rot = smpl_data["gl_rot"]
         t = smpl_data["gl_transl"]
 
+
         shapes.append(shape)
         poses.append(pose)
         gl_rot.append(rot)
@@ -151,13 +151,24 @@ def get_view_data(root_dir, cam_id, start, end, skip, json_flag=True):
 
     msk_lists = sorted(glob.glob(f"{root_dir}/mask/{cam_id:02d}/*.png"))[start:end:skip]
 
+
+    if len(img_lists) < 1:
+        img_lists = sorted(glob.glob(f"{root_dir}/images/{cam_id:03d}/*.jpg"))[
+         start:end:skip
+        ]
+
+        msk_lists = sorted(glob.glob(f"{root_dir}/mask/{cam_id:03d}/*.png"))[start:end:skip]
+
+
     fids = []
     for file in img_lists:
         fid = int(os.path.basename(file).split(".")[0])
         fids.append(fid)
 
-    # param_path = f"{root_dir}/smpl_params_standard"
-    param_path = f"{root_dir}/params"
+    if json_flag:
+        param_path = f"{root_dir}/smpl_params_standard"
+    else:
+        param_path = f"{root_dir}/params"
 
     smpl_params = load_smpl_param(param_path, fids, json_flag=json_flag)
 
@@ -206,6 +217,7 @@ def get_camera_params(root, vids, downscale, processed=False):
 
         new_w = int(cx * 2)
         new_h = int(cy * 2)
+
 
         if processed:
             width = new_w

@@ -125,6 +125,8 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             # auxiliary
             "alpha": msk,
             "bg_color": bg_color,
+            "width": self.image_shape[1],
+            "height": self.image_shape[0],
             "idx": idx,
         }
         if self.near is not None and self.far is not None:

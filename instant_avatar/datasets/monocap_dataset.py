@@ -35,6 +35,7 @@ class MonoCapDataset(torch.utils.data.Dataset):
 
         self.view_lists = []
 
+
         for vid in opt.view_id:
             _img_list, _msk_list, smpl_param, view_list = get_view_data(
                 root, vid, start, end, skip, json_flag=False
@@ -73,7 +74,6 @@ class MonoCapDataset(torch.utils.data.Dataset):
             return sample
 
     def get_data(self, idx):
-        self.image_shape = (cam["height"], cam["width"])
 
         cam_id = self.view_lists[idx]
         cam = self.cams[cam_id]
@@ -109,13 +109,16 @@ class MonoCapDataset(torch.utils.data.Dataset):
 
         rays_o_, rays_d_ = make_rays(K, cam["c2w"], cam["height"], cam["width"])
 
+
+        height = img.shape[0]
+        width = img.shape[1]
         if self.split == "train":
             (msk, img, rays_o, rays_d, bg_color) = self.sampler.sample(
                 msk, img, rays_o_, rays_d_, bg_color
             )
         else:
-            rays_o = self.rays_o.reshape(-1, 3)
-            rays_d = self.rays_d.reshape(-1, 3)
+            rays_o = rays_o_.reshape(-1, 3)
+            rays_d = rays_d_.reshape(-1, 3)
             img = img.reshape(-1, 3)
             msk = msk.reshape(-1)
 
@@ -132,6 +135,8 @@ class MonoCapDataset(torch.utils.data.Dataset):
             # auxiliary
             "alpha": msk,
             "bg_color": bg_color,
+            "width": width,
+            "height": height,
             "idx": idx,
         }
 

@@ -14,7 +14,7 @@ base_name = "instant_avatar_bl"
 
 cfg_name = "SNARF_NGP"
 
-for seq in seqs:
+for seq in seqs[2:]:
     experiment = f"{base_name}_{seq}"
     cmd_str = f"python train.py --config-name {cfg_name} dataset={dataset}/{seq} experiment={experiment} train.max_epochs=200"
 
@@ -23,3 +23,4 @@ for seq in seqs:
     os.system(cmd_str)
 
     # os.system(cmd_str1)
+    break

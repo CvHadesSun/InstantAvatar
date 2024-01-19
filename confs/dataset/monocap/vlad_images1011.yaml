@@ -21,13 +21,13 @@ opt:
     random_init: True
     processed: True
   val:
-    view_id: 0
+    view_id: [66] 
     num_workers: 4
     batch_size: 1
     start: 451 
     end: 461 
     skip: 4 
-    downscale: 1
+    downscale: 2 
     white_background: false
     random_init: True
     processed: True
@@ -38,7 +38,7 @@ opt:
     start: 1 
     end: 510 
     skip: 30 
-    downscale: 1
+    downscale: 2 
     white_background: false
     random_init: True
     processed: True
