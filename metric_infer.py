@@ -6,40 +6,18 @@ import hydra
 from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
-from torch.cuda.amp import custom_fwd
-from torchmetrics import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
-from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+
+# from torch.cuda.amp import custom_fwd
+# from torchmetrics import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
+# from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+from torch.utils.data import DataLoader
 
 from instant_avatar.metric.image_utils import psnr
 from instant_avatar.metric.lpipsPyTorch import lpips
 from instant_avatar.metric.loss_utils import ssim
-
-
-class Evaluator(nn.Module):
-    """adapted from https://github.com/JanaldoChen/Anim-NeRF/blob/main/models/evaluator.py"""
-
-    def __init__(self):
-        super().__init__()
-        # self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="alex")
-        # self.psnr = PeakSignalNoiseRatio(data_range=1)
-        # self.ssim = StructuralSimilarityIndexMeasure(data_range=1)
-
-        self.lpips = lpips
-        self.psnr = psnr
-        self.ssim = ssim
-
-    # custom_fwd: turn off mixed precision to avoid numerical instability during evaluation
-    @custom_fwd(cast_inputs=torch.float32)
-    def forward(self, rgb, rgb_gt):
-        # torchmetrics assumes NCHW format
-        rgb = rgb.permute(0, 3, 1, 2).clamp(max=1.0)
-        rgb_gt = rgb_gt.permute(0, 3, 1, 2)
-
-        return {
-            "psnr": self.psnr(rgb, rgb_gt),
-            "ssim": self.ssim(rgb, rgb_gt),
-            "lpips": self.lpips(rgb, rgb_gt),
-        }
+from tqdm import tqdm
+import numpy as np
+import json
 
 
 @hydra.main(config_path="./confs", config_name="SNARF_NGP_refine")
@@ -48,85 +26,70 @@ def main(opt):
     torch.set_printoptions(precision=6)
     print(f"Switch to {os.getcwd()}")
 
-    checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        dirpath=f"checkpoints/refinement/",
-        filename="epoch={epoch:04d}-val_psnr={val/psnr:.1f}",
-        auto_insert_metric_name=False,
-        **opt.checkpoint,
-    )
-
-    # refine test data
-    opt.dataset.opt.train.start = opt.dataset.opt.test.start
-    opt.dataset.opt.train.end = opt.dataset.opt.test.end
-    opt.dataset.opt.train.skip = opt.dataset.opt.test.skip
-
-    opt.dataset.opt.val.start = opt.dataset.opt.test.start
-    opt.dataset.opt.val.end = opt.dataset.opt.test.end
-    opt.dataset.opt.val.skip = opt.dataset.opt.test.skip
-
     datamodule = hydra.utils.instantiate(opt.dataset, _recursive_=False)
-
-    # load checkpoint
     model = hydra.utils.instantiate(opt.model, datamodule=datamodule, _recursive_=False)
-    state_dict = model.state_dict()
+    model = model.cuda()
+    model.eval()
 
-    checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
-    for k, v in torch.load(checkpoint)["state_dict"].items():
-        if not k.startswith("SMPL_param"):
-            state_dict[k] = v
-    model.load_state_dict(state_dict)
+    checkpoints = sorted(glob.glob("checkpoints/*.ckpt"))
+    print("Resume from", checkpoints[-1])
+    checkpoint = torch.load(checkpoints[-1])
+    model.load_state_dict(checkpoint["state_dict"])
 
-    # freeze all the parameters other than SMPL pose
-    for k, param in model.named_parameters():
-        if not k.startswith("SMPL_param"):
-            param.requires_grad = False
-
-    trainer = pl.Trainer(
-        gpus=1,
-        accelerator="gpu",
-        callbacks=[checkpoint_callback],
-        num_sanity_val_steps=0,  # disable sanity check
-        weights_summary=None,
-        logger=False,
-        enable_progress_bar=False,
-        **opt.train,
+    dataloader = DataLoader(
+        datamodule.testset, batch_size=1, shuffle=False, num_workers=8, pin_memory=True
     )
 
-    checkpoints = sorted(glob.glob("checkpoints/refinement/*.ckpt"))
-    if len(checkpoints) > 0 and opt.resume:
-        print("Resume from", checkpoints[-1])
-        trainer.fit(model, ckpt_path=checkpoints[-1])
-    else:
-        print("Saving configs.")
-        OmegaConf.save(opt, "config_refine.yaml")
-        trainer.fit(model)
+    ssims = []
+    psnrs = []
+    lpipss = []
 
-    trainer.test(model)[0]
-    imgs = [cv2.imread(fn) for fn in glob.glob("test/*.png")]
-    imgs = [cv2.cvtColor(img, cv2.COLOR_BGR2RGB) for img in imgs]
-    imgs = [torch.tensor(img).cuda().float() / 255.0 for img in imgs]
+    result = {}
 
-    evaluator = Evaluator()
-    evaluator = evaluator.cuda()
-    evaluator.eval()
+    with torch.inference_mode():
+        for i, batch in tqdm(enumerate(dataloader)):
+            new_batch = {}
 
-    H, W = imgs[0].shape[:2]
-    W //= 3
-    with torch.no_grad():
-        results = [evaluator(img[None, :, W : 2 * W], img[None, :, :W]) for img in imgs]
+            for k in batch.keys():
+                if k == "image_name" or k == "nvdiff_pkg":
+                    continue
+                new_batch[k] = batch[k].cuda()
 
-    with open("results.txt", "w") as f:
-        psnr = torch.stack([r["psnr"] for r in results]).mean().item()
-        print(f"PSNR: {psnr:.2f}")
-        f.write(f"PSNR: {psnr:.2f}\n")
+            height = batch["height"]
+            width = batch["width"]
 
-        ssim = torch.stack([r["ssim"] for r in results]).mean().item()
-        print(f"SSIM: {ssim:.4f}")
-        f.write(f"SSIM: {ssim:.4f}\n")
+            render, _, alpha, _ = model.render_image_fast(batch, (height, width))
+            # render [1,c,h,w]
 
-        lpips = torch.stack([r["lpips"] for r in results]).mean().item()
-        print(f"LPIPS: {lpips:.4f}")
-        f.write(f"LPIPS: {lpips:.4f}\n")
+            render = torch.clamp(render, 0.0, 1.0).permute(0, 3, 1, 2).cuda() * 255
+            gt_img = batch["rgb"][0].permute(2, 0, 1).unsqueeze(0)[:, :3, :, :].cuda()
+            gt_img = torch.clamp(gt_img, 0.0, 1.0) * 255
+
+            ssims.append(ssim(render, gt_img))
+            psnrs.append(psnr(render, gt_img))
+            lpipss.append(lpips(render, gt_img, net_type="vgg"))
+
+            if 0:
+                render_img = render.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+                gt_img_ = gt_img.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+
+                res_img = cv2.hconcat([render_img[0], gt_img_[0]])
+                cv2.imwrite(f"{i:04d}_test.png", res_img)
+
+        print("  SSIM : {:>12.7f}".format(torch.tensor(ssims).mean(), ".5"))
+        print("  PSNR : {:>12.7f}".format(torch.tensor(psnrs).mean(), ".5"))
+        print("  LPIPS: {:>12.7f}".format(torch.tensor(lpipss).mean(), ".5"))
+        print("")
+
+        result["ssim"] = f"{torch.tensor(ssims).mean():.5f}"
+        result["psnr"] = f"{torch.tensor(psnrs).mean():.5f}"
+        result["lpips"] = f"{torch.tensor(lpipss).mean():.5f}"
+
+    metric_dir = "metric"
+    os.makedirs(metric_dir, exist_ok=True)
+
+    with open(metric_dir + "/results.json", "w") as fp:
+        json.dump(result, fp, indent=True)
 
 
 if __name__ == "__main__":

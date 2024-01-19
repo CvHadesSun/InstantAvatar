@@ -35,7 +35,6 @@ class MonoCapDataset(torch.utils.data.Dataset):
 
         self.view_lists = []
 
-
         for vid in opt.view_id:
             _img_list, _msk_list, smpl_param, view_list = get_view_data(
                 root, vid, start, end, skip, json_flag=False
@@ -65,16 +64,16 @@ class MonoCapDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.img_lists)
 
+    # def __getitem__(self, idx):
+    #     if idx in self.cache_dict:
+    #         return self.cache_dict[idx]
+    #     else:
+    #         sample = self.get_data(idx)
+    #         self.cache_dict[idx] = sample
+    #         return sample
+
+    # def get_data(self, idx):
     def __getitem__(self, idx):
-        if idx in self.cache_dict:
-            return self.cache_dict[idx]
-        else:
-            sample = self.get_data(idx)
-            self.cache_dict[idx] = sample
-            return sample
-
-    def get_data(self, idx):
-
         cam_id = self.view_lists[idx]
         cam = self.cams[cam_id]
 
@@ -107,11 +106,10 @@ class MonoCapDataset(torch.utils.data.Dataset):
             bg_color = np.ones_like(img).astype(np.float32)
             img = img * msk[..., None] + (1 - msk[..., None])
 
-        rays_o_, rays_d_ = make_rays(K, cam["c2w"], cam["height"], cam["width"])
-
-
         height = img.shape[0]
         width = img.shape[1]
+        rays_o_, rays_d_ = make_rays(K, cam["c2w"], height, width)
+
         if self.split == "train":
             (msk, img, rays_o, rays_d, bg_color) = self.sampler.sample(
                 msk, img, rays_o_, rays_d_, bg_color
